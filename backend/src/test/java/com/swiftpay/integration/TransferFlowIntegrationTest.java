@@ -65,8 +65,21 @@ class TransferFlowIntegrationTest {
     }
 
     @Test
-    void protectedEndpoint_withoutToken_returns401() throws Exception {
-        mockMvc.perform(get("/api/accounts/me")).andExpect(status().isUnauthorized());
+    void protectedEndpoint_withoutToken_returns401WithErrorModel() throws Exception {
+        mockMvc.perform(get("/api/accounts/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.errorCode").value("AUTH_ERROR"))
+                .andExpect(jsonPath("$.message").exists())
+                .andExpect(jsonPath("$.traceId").exists());
+    }
+
+    @Test
+    void protectedEndpoint_withInvalidToken_returns401WithErrorModel() throws Exception {
+        mockMvc.perform(get("/api/accounts/me").header("Authorization", "Bearer not-a-real-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errorCode").value("AUTH_ERROR"))
+                .andExpect(jsonPath("$.traceId").exists());
     }
 
     @Test
