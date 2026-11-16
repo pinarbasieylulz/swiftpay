@@ -87,6 +87,19 @@ class AccountServiceTest {
     }
 
     @Test
+    void getLimits_spentExceedsLimit_clampsRemainingToZero() {
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(accountRepository.findByCustomerId(customerId)).thenReturn(List.of(account));
+        when(transferRepository.sumCompletedAmount(any(), any(), any(), any()))
+                .thenReturn(new BigDecimal("1000000.00"));
+
+        var result = accountService.getLimits(customerId);
+
+        assertThat(result.getDailyRemaining()).isEqualTo(BigDecimal.ZERO);
+        assertThat(result.getMonthlyRemaining()).isEqualTo(BigDecimal.ZERO);
+    }
+
+    @Test
     void getLimits_customerNotFound_throwsResourceNotFound() {
         UUID id = UUID.randomUUID();
         when(customerRepository.findById(id)).thenReturn(Optional.empty());
