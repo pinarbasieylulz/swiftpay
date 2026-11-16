@@ -76,7 +76,11 @@ Run the test suite (unit + integration, against `swiftpay_test`):
 mvn test
 ```
 
-JaCoCo report: `target/site/jacoco/index.html` (current instruction coverage ≈ 91%).
+JaCoCo report: `target/site/jacoco/index.html` (current instruction coverage ≈ 99%).
+
+A live, scenario-level smoke test (success paths, every error path, limit boundaries, malicious/extreme
+inputs, and a 50-concurrent-request double-spend check) is at `scenario-tests/run_scenarios.sh` — run it
+against a running instance (`mvn spring-boot:run`) with `bash scenario-tests/run_scenarios.sh`.
 
 ## Demo credentials (seeded by `V2__seed.sql`)
 
@@ -90,6 +94,40 @@ JaCoCo report: `target/site/jacoco/index.html` (current instruction coverage ≈
 Limits are configurable in `application.yml` under `swiftpay.limits` (used only to seed customer defaults;
 each customer's live limits are columns on `customers`, so they can also be changed per customer without a
 redeploy). JWT secret/expiry under `swiftpay.security`.
+
+## Security
+
+- **Authentication**: stateless JWT (`io.jsonwebtoken`, HS256), issued by `POST /api/auth/login`, required on
+  every other endpoint. A missing/invalid/expired token returns `401 AUTH_ERROR` with the standard error body
+  (not an empty response — this was a real bug found and fixed during review: the Spring Security entry point
+  used to call `response.sendError()` directly, bypassing `GlobalExceptionHandler`).
+- **Password storage**: BCrypt (`BCryptPasswordEncoder`, default cost factor 10).
+- **Timing-attack resistant login**: whether the username exists or not, `AuthService.login` always performs a
+  BCrypt comparison (against a fixed dummy hash when the user is unknown) before rejecting, so response time
+  cannot be used to enumerate valid usernames.
+- **Brute-force protection**: `LoginRateLimiter` blocks an IP+username pair after 5 failed attempts within a
+  60-second window, returning `429 TOO_MANY_ATTEMPTS`. It is in-memory and per-instance — sufficient for a
+  single-node deployment; a multi-instance deployment would need a shared store (e.g. Redis) instead.
+- **IDOR protection**: the authenticated customer id is taken only from the verified JWT claim
+  (`CurrentCustomer.id()`, backed by `SecurityContextHolder`) — never from a client-supplied id/parameter.
+  Every account/transfer lookup checks ownership and returns `403 ACCESS_DENIED` otherwise. Verified both by
+  unit/integration tests and by the live scenario suite.
+- **CORS**: locked to an explicit origin allowlist (`swiftpay.security.allowed-origins`, defaults to the local
+  frontend dev origins), not a wildcard — credentials are allowed, so a wildcard origin would be rejected by
+  browsers anyway, but the explicit allowlist also blocks arbitrary origins at the preflight.
+- **No information leakage in error responses**: unexpected exceptions return a generic
+  `500 INTERNAL_ERROR` with no stack trace, SQL text, or internal class/package names in the body; the full
+  exception is only written to the server log, keyed by the same `traceId` returned to the client.
+- **SQL injection**: all queries are JPA-derived or `@Param`-bound JPQL/native queries — no string
+  concatenation with user input anywhere in the repository layer.
+- **Mass assignment**: request DTOs expose only the fields a client should set (e.g. `TransferRequest` has no
+  `customerId`/`status`/`id` field a caller could use to override server-assigned values).
+- **Security headers**: Spring Security's defaults are enabled (`X-Content-Type-Options: nosniff`,
+  `X-Frame-Options: DENY`, cache-control on sensitive responses).
+
+Known, accepted limitation: the rate limiter and the idempotency/limit-check-then-write sequence are correct
+for a single application instance; a horizontally-scaled deployment would need a shared rate-limit store and
+(for the small theoretical read-then-write race noted below) a stricter locking strategy.
 
 ## Assumptions
 

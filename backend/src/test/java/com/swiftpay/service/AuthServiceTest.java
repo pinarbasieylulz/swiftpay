@@ -69,6 +69,19 @@ class AuthServiceTest {
     }
 
     @Test
+    void login_unknownUser_stillInvokesPasswordEncoder_toAvoidTimingLeak() {
+        when(customerRepository.findByUsername("bob")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(req("bob", "pw")))
+                .isInstanceOf(BadCredentialsException.class);
+
+        // The encoder must be invoked even when the user does not exist, so that the
+        // response time does not reveal whether the username is valid.
+        org.mockito.Mockito.verify(passwordEncoder)
+                .matches(org.mockito.ArgumentMatchers.eq("pw"), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void login_wrongPassword_throwsBadCredentials() {
         when(customerRepository.findByUsername("alice")).thenReturn(Optional.of(customer));
         when(passwordEncoder.matches("wrong", "hash")).thenReturn(false);

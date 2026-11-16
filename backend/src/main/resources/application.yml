@@ -23,6 +23,7 @@ swiftpay:
   security:
     jwt-secret: ${JWT_SECRET:change-this-secret-change-this-secret-change-this}
     jwt-expiration-ms: 3600000
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
   limits:
     per-transfer: 50000.00
     daily-total: 100000.00
