@@ -1,0 +1,151 @@
+{
+  "info": {
+    "name": "SwiftPay",
+    "_postman_id": "f2b1a8d0-0000-4000-8000-000000000001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "aliceAccountId", "value": "aaaaaaaa-1111-1111-1111-111111111111" },
+    { "key": "bobIban", "value": "TR110006200000000022220002" },
+    { "key": "transferId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth - Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var body = pm.response.json();",
+              "pm.collectionVariables.set('token', body.token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"alice\",\n  \"password\": \"Passw0rd!\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "Accounts - My accounts",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/accounts/me"
+      }
+    },
+    {
+      "name": "Accounts - My limits",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/accounts/me/limits"
+      }
+    },
+    {
+      "name": "Transfers - Create",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "var body = pm.response.json();",
+              "if (body.id) { pm.collectionVariables.set('transferId', body.id); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sourceAccountId\": \"{{aliceAccountId}}\",\n  \"destinationIban\": \"{{bobIban}}\",\n  \"amount\": 100.00,\n  \"description\": \"lunch money\",\n  \"idempotencyKey\": \"{{$guid}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/transfers"
+      }
+    },
+    {
+      "name": "Transfers - Get by id",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/transfers/{{transferId}}"
+      }
+    },
+    {
+      "name": "Transfers - List (all)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/transfers"
+      }
+    },
+    {
+      "name": "Transfers - List by date range",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/transfers?startDate=2026-01-01T00:00:00Z&endDate=2026-12-31T23:59:59Z",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "transfers"],
+          "query": [
+            { "key": "startDate", "value": "2026-01-01T00:00:00Z" },
+            { "key": "endDate", "value": "2026-12-31T23:59:59Z" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Statistics - Monthly",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/statistics/monthly"
+      }
+    },
+    {
+      "name": "Transfers - Create (invalid amount, expect 400)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sourceAccountId\": \"{{aliceAccountId}}\",\n  \"destinationIban\": \"{{bobIban}}\",\n  \"amount\": -5.00,\n  \"description\": \"should fail validation\",\n  \"idempotencyKey\": \"{{$guid}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/transfers"
+      }
+    },
+    {
+      "name": "Transfers - Create (over per-transfer limit, expect 422)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"sourceAccountId\": \"{{aliceAccountId}}\",\n  \"destinationIban\": \"{{bobIban}}\",\n  \"amount\": 999999.00,\n  \"description\": \"should exceed per-transfer limit\",\n  \"idempotencyKey\": \"{{$guid}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/transfers"
+      }
+    }
+  ]
+}

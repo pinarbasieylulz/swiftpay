@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: swiftpay
+  datasource:
+    url: jdbc:postgresql://localhost:5432/swiftpay
+    username: swiftpay
+    password: swiftpay
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+swiftpay:
+  security:
+    jwt-secret: ${JWT_SECRET:change-this-secret-change-this-secret-change-this}
+    jwt-expiration-ms: 3600000
+  limits:
+    per-transfer: 50000.00
+    daily-total: 100000.00
+    monthly-total: 500000.00
+
+logging:
+  level:
+    com.swiftpay: INFO
