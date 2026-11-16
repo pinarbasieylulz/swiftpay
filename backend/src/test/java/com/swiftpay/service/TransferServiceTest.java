@@ -85,8 +85,8 @@ class TransferServiceTest {
         assertThat(response.getStatus()).isEqualTo("COMPLETED");
         assertThat(source.getBalance()).isEqualTo(new BigDecimal("900.00"));
         assertThat(destination.getBalance()).isEqualTo(new BigDecimal("100.00"));
-        verify(accountRepository).save(source);
-        verify(accountRepository).save(destination);
+        verify(accountRepository).saveAndFlush(source);
+        verify(accountRepository).saveAndFlush(destination);
     }
 
     @Test
@@ -100,7 +100,7 @@ class TransferServiceTest {
 
         assertThat(response.getId()).isEqualTo(previous.getId());
         verify(accountRepository, never()).findById(any());
-        verify(accountRepository, never()).save(any());
+        verify(accountRepository, never()).saveAndFlush(any());
     }
 
     @Test
@@ -208,7 +208,7 @@ class TransferServiceTest {
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
         when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
         when(transferRepository.sumCompletedAmount(any(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
-        when(accountRepository.save(source)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Account.class, sourceId));
+        when(accountRepository.saveAndFlush(source)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Account.class, sourceId));
 
         assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
                 .isInstanceOf(TransferConflictException.class)

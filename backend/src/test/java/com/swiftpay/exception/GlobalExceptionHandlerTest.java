@@ -3,11 +3,14 @@ package com.swiftpay.exception;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
 
@@ -59,6 +62,39 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody().getErrorCode()).isEqualTo("AUTH_ERROR");
+    }
+
+    @Test
+    void handleMalformedBody_returns400() {
+        HttpMessageNotReadableException ex = mock(HttpMessageNotReadableException.class);
+
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response = handler.handleMalformedBody(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("VALIDATION_ERROR");
+    }
+
+    @Test
+    void handleTypeMismatch_returns400WithFieldName() {
+        MethodArgumentTypeMismatchException ex = mock(MethodArgumentTypeMismatchException.class);
+        when(ex.getName()).thenReturn("startDate");
+
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response = handler.handleTypeMismatch(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.getBody().getMessage()).contains("startDate");
+    }
+
+    @Test
+    void handleOptimisticLock_returns409TransferConflict() {
+        ObjectOptimisticLockingFailureException ex =
+                new ObjectOptimisticLockingFailureException(Object.class, "id");
+
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response = handler.handleOptimisticLock(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("TRANSFER_CONFLICT");
     }
 
     @Test

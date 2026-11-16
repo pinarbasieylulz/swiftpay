@@ -104,8 +104,12 @@ public class TransferService {
         try {
             source.debit(amount);
             destination.credit(amount);
-            accountRepository.save(source);
-            accountRepository.save(destination);
+            // saveAndFlush forces the @Version check to happen here, inside this
+            // try/catch, instead of being deferred to transaction commit (where
+            // Hibernate's default flush timing would let the exception escape
+            // uncaught and surface as a 500 instead of a handled 409).
+            accountRepository.saveAndFlush(source);
+            accountRepository.saveAndFlush(destination);
             transfer.markCompleted();
         } catch (ObjectOptimisticLockingFailureException ex) {
             throw new TransferConflictException("Account was modified concurrently, please retry");

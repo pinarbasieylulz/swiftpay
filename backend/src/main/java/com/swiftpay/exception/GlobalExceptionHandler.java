@@ -5,11 +5,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,6 +39,31 @@ public class GlobalExceptionHandler {
         log.warn("[{}] VALIDATION_ERROR: {}", traceId, message);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(new ApiErrorResponse("VALIDATION_ERROR", message, traceId));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleMalformedBody(HttpMessageNotReadableException ex) {
+        String traceId = traceId();
+        log.warn("[{}] VALIDATION_ERROR: malformed request body", traceId);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiErrorResponse("VALIDATION_ERROR", "Request body is malformed or contains an invalid value", traceId));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String traceId = traceId();
+        String message = ex.getName() + " has an invalid value";
+        log.warn("[{}] VALIDATION_ERROR: {}", traceId, message);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiErrorResponse("VALIDATION_ERROR", message, traceId));
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ApiErrorResponse> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        String traceId = traceId();
+        log.warn("[{}] TRANSFER_CONFLICT: optimistic lock failure escaped service layer", traceId);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiErrorResponse("TRANSFER_CONFLICT", "Account was modified concurrently, please retry", traceId));
     }
 
     @ExceptionHandler({BadCredentialsException.class, AccessDeniedException.class})
