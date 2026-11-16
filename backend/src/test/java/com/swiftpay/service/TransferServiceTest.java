@@ -8,6 +8,7 @@ import com.swiftpay.entity.Transfer;
 import com.swiftpay.entity.TransferStatus;
 import com.swiftpay.exception.AccessDeniedCustomException;
 import com.swiftpay.exception.ResourceNotFoundException;
+import com.swiftpay.exception.TransferConflictException;
 import com.swiftpay.exception.TransferRejectedException;
 import com.swiftpay.repository.AccountRepository;
 import com.swiftpay.repository.CustomerRepository;
@@ -173,6 +174,57 @@ class TransferServiceTest {
         assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
                 .isInstanceOf(TransferRejectedException.class)
                 .hasMessageContaining("daily limit");
+    }
+
+    @Test
+    void createTransfer_customerNotFound_throwsResourceNotFound() {
+        when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
+        when(customerRepository.findById(customerId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("10.00"), "TR110006200000000022220002", "k1")))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void createTransfer_monthlyLimitExceeded_throwsRejected() {
+        when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        source.credit(new BigDecimal("600000.00"));
+        when(transferRepository.sumCompletedAmount(eq(sourceId), eq(TransferStatus.COMPLETED), any(), any()))
+                .thenReturn(BigDecimal.ZERO)
+                .thenReturn(new BigDecimal("499950.00"));
+
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
+                .isInstanceOf(TransferRejectedException.class)
+                .hasMessageContaining("monthly limit");
+    }
+
+    @Test
+    void createTransfer_concurrentAccountUpdate_throwsConflict() {
+        when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
+        when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
+        when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
+        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(transferRepository.sumCompletedAmount(any(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
+        when(accountRepository.save(source)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Account.class, sourceId));
+
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
+                .isInstanceOf(TransferConflictException.class)
+                .hasMessageContaining("concurrently");
+    }
+
+    @Test
+    void listTransfers_withExplicitDateRange_passesThroughDates() {
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        Instant end = Instant.parse("2026-02-01T00:00:00Z");
+        when(transferRepository.findByCustomerIdAndCreatedAtBetweenOrderByCreatedAtDesc(customerId, start, end))
+                .thenReturn(java.util.List.of());
+
+        var result = transferService.listTransfers(customerId, start, end);
+        assertThat(result).isEmpty();
+        verify(transferRepository).findByCustomerIdAndCreatedAtBetweenOrderByCreatedAtDesc(customerId, start, end);
     }
 
     @Test

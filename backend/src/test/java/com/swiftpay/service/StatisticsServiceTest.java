@@ -56,6 +56,47 @@ class StatisticsServiceTest {
     }
 
     @Test
+    void getMonthlyStatistics_rowWithLocalDateTime_isParsedCorrectly() {
+        UUID customerId = UUID.randomUUID();
+        YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
+        java.time.LocalDateTime ldt = currentMonth.atDay(1).atStartOfDay();
+
+        Object[] row = new Object[]{ldt, 1L, new BigDecimal("50.00")};
+        when(transferRepository.monthlyCompletedStats(any(), any())).thenReturn(List.<Object[]>of(row));
+
+        var result = statisticsService.getMonthlyStatistics(customerId);
+
+        assertThat(result.get(0).getTotalTransferCount()).isEqualTo(1L);
+        assertThat(result.get(0).getTotalTransferredAmount()).isEqualTo(new BigDecimal("50.00"));
+    }
+
+    @Test
+    void getMonthlyStatistics_rowWithInstant_isParsedCorrectly() {
+        UUID customerId = UUID.randomUUID();
+        YearMonth currentMonth = YearMonth.now(ZoneOffset.UTC);
+        Instant instant = currentMonth.atDay(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+
+        Object[] row = new Object[]{instant, 3L, new BigDecimal("75.00")};
+        when(transferRepository.monthlyCompletedStats(any(), any())).thenReturn(List.<Object[]>of(row));
+
+        var result = statisticsService.getMonthlyStatistics(customerId);
+
+        assertThat(result.get(0).getTotalTransferCount()).isEqualTo(3L);
+        assertThat(result.get(0).getTotalTransferredAmount()).isEqualTo(new BigDecimal("75.00"));
+    }
+
+    @Test
+    void getMonthlyStatistics_rowWithUnsupportedDateType_throwsIllegalState() {
+        UUID customerId = UUID.randomUUID();
+        Object[] row = new Object[]{"not-a-date", 1L, new BigDecimal("10.00")};
+        when(transferRepository.monthlyCompletedStats(any(), any())).thenReturn(List.<Object[]>of(row));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> statisticsService.getMonthlyStatistics(customerId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unsupported date type");
+    }
+
+    @Test
     void getMonthlyStatistics_noData_returnsAllZero() {
         when(transferRepository.monthlyCompletedStats(any(), any())).thenReturn(List.of());
         var result = statisticsService.getMonthlyStatistics(UUID.randomUUID());
