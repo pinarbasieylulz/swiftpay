@@ -49,4 +49,36 @@ class LoginRateLimiterTest {
         limiter.recordSuccess("1.2.3.4", "alice");
         assertThat(limiter.isBlocked("1.2.3.4", "alice")).isFalse();
     }
+
+    @Test
+    void perIpLimit_blocksCredentialStuffingAcrossManyUsernames() {
+        // Each username alone stays under the per-account threshold (5), but the same IP
+        // trying 20+ distinct usernames must still trip the per-IP limit.
+        LoginRateLimiter limiter = new LoginRateLimiter();
+        for (int i = 0; i < 20; i++) {
+            limiter.recordFailure("9.9.9.9", "user" + i);
+        }
+        assertThat(limiter.isBlocked("9.9.9.9", "brand-new-user")).isTrue();
+    }
+
+    @Test
+    void perIpLimit_doesNotAffectOtherIps() {
+        LoginRateLimiter limiter = new LoginRateLimiter();
+        for (int i = 0; i < 20; i++) {
+            limiter.recordFailure("9.9.9.9", "user" + i);
+        }
+        assertThat(limiter.isBlocked("10.10.10.10", "alice")).isFalse();
+    }
+
+    @Test
+    void recordSuccess_doesNotResetPerIpBudget() {
+        // A successful login for one username must not reset the credential-stuffing
+        // budget an attacker already built up against other usernames from the same IP.
+        LoginRateLimiter limiter = new LoginRateLimiter();
+        for (int i = 0; i < 20; i++) {
+            limiter.recordFailure("9.9.9.9", "user" + i);
+        }
+        limiter.recordSuccess("9.9.9.9", "legit-user");
+        assertThat(limiter.isBlocked("9.9.9.9", "another-new-user")).isTrue();
+    }
 }

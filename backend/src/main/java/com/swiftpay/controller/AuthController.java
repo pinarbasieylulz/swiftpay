@@ -42,11 +42,16 @@ public class AuthController {
         }
     }
 
+    /**
+     * The real TCP peer address. We deliberately do NOT trust X-Forwarded-For here: this
+     * service is not deployed behind a reverse proxy in this case study, and a client-supplied
+     * forwarded-for header can be set to an arbitrary value on every request, which would let
+     * an attacker forge a new "IP" per attempt and bypass the rate limiter entirely. If this
+     * is later deployed behind a trusted reverse proxy, that proxy's hostname/IP should be
+     * allow-listed (e.g. via Spring's ForwardedHeaderFilter with a trusted-proxy check) before
+     * X-Forwarded-For is honored again.
+     */
     private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
         return request.getRemoteAddr();
     }
 }

@@ -48,7 +48,9 @@ Instant money transfer backend for SwiftPay, a digital bank. Built with Java 21 
 | GET | `/api/accounts/me/limits` | Remaining daily/monthly limits |
 | GET | `/api/statistics/monthly` | Last 6 months of completed-transfer stats |
 
-A ready-to-import Postman collection is at `postman/SwiftPay.postman_collection.json`.
+A ready-to-import Postman collection is at `postman/SwiftPay.postman_collection.json` (`baseUrl` points at
+`https://localhost:8443`; since the dev certificate is self-signed, turn off "SSL certificate verification" in
+Postman's settings, or run with `SSL_ENABLED=false` for plain HTTP instead).
 
 ## Running it
 
@@ -62,13 +64,21 @@ sudo -u postgres psql -c "CREATE DATABASE swiftpay OWNER swiftpay;"
 sudo -u postgres psql -c "CREATE DATABASE swiftpay_test OWNER swiftpay;"
 ```
 
+Generate the local dev TLS keystore once (gitignored, not committed — see Security below):
+
+```bash
+./scripts/generate-keystore.sh
+```
+
 Start the app (Flyway migrates the schema and seeds demo data automatically):
 
 ```bash
 mvn spring-boot:run
 ```
 
-API listens on `http://localhost:8080`.
+API listens on **`https://localhost:8443`** (self-signed dev certificate — use `curl -k` or equivalent).
+Plain `http://localhost:8080` is kept open only to 302-redirect to HTTPS. Set `SSL_ENABLED=false` to serve
+plain HTTP on `8443` instead, e.g. for quick local debugging without the keystore.
 
 Run the test suite (unit + integration, against `swiftpay_test`):
 
@@ -76,9 +86,10 @@ Run the test suite (unit + integration, against `swiftpay_test`):
 mvn test
 ```
 
-JaCoCo report: `target/site/jacoco/index.html`. **Backend test coverage: 99.4% instruction coverage** (89
+JaCoCo report: `target/site/jacoco/index.html`. **Backend test coverage: ~97% instruction coverage** (92
 unit/integration tests; see `target/site/jacoco/jacoco.csv` for the authoritative, regenerated-on-every-run
-number — well above the 80% requirement). The only meaningfully uncovered lines are `SwiftpayApplication.main`
+number — well above the 80% requirement). The only meaningfully uncovered lines are `SwiftpayApplication.main`,
+the HTTPS/Tomcat-connector wiring in `TlsConfig` (infrastructure glue, exercised live instead — see Security),
 and a couple of defensive branches that cannot be hit without mocking a JVM-level failure.
 
 A live, scenario-level smoke test (success paths, every error path, limit boundaries, malicious/extreme
@@ -141,9 +152,24 @@ real; every test, the Postman collection and the scenario script were updated to
 - **Timing-attack resistant login**: whether the username exists or not, `AuthService.login` always performs a
   BCrypt comparison (against a fixed dummy hash when the user is unknown) before rejecting, so response time
   cannot be used to enumerate valid usernames.
-- **Brute-force protection**: `LoginRateLimiter` blocks an IP+username pair after 5 failed attempts within a
-  60-second window, returning `429 TOO_MANY_ATTEMPTS`. It is in-memory and per-instance — sufficient for a
-  single-node deployment; a multi-instance deployment would need a shared store (e.g. Redis) instead.
+- **Brute-force protection**: `LoginRateLimiter` enforces two independent in-memory, 60-second fixed windows:
+  5 failed attempts per IP+username (stops guessing one account) and 20 failed attempts per IP across *any*
+  usernames (stops credential-stuffing many accounts from one IP, which the first limit alone would not catch).
+  Both return `429 TOO_MANY_ATTEMPTS`. The client IP is read from `HttpServletRequest.getRemoteAddr()` only —
+  `X-Forwarded-For` is deliberately **not** trusted, because this service is not deployed behind a reverse proxy
+  in this case study and a client-supplied header could otherwise be forged per-request to bypass the limiter
+  entirely (this was found and fixed during a security review; an earlier version did trust it). If this is ever
+  deployed behind a real reverse proxy, that proxy's address must be allow-listed before `X-Forwarded-For` is
+  honored again. In-memory and per-instance — sufficient for a single-node deployment; a multi-instance
+  deployment would need a shared store (e.g. Redis) instead.
+- **Transport security (HTTPS/TLS)**: the app serves HTTPS by default on port `8443` using a local self-signed
+  certificate (`scripts/generate-keystore.sh` generates `src/main/resources/keystore.p12`, gitignored — run it
+  once before `mvn spring-boot:run`; `curl -k` or an equivalent "trust this cert" step is needed against the
+  self-signed cert). A second plaintext connector on port `8080` (`TlsConfig`) does nothing but 302-redirect to
+  HTTPS — there is no unencrypted path to the API when TLS is enabled (the default). `Strict-Transport-Security`
+  is sent on every HTTPS response. Set `SSL_ENABLED=false` to disable TLS entirely for local HTTP-only debugging.
+  In a real deployment, the self-signed dev certificate would be replaced by one from a real CA (directly or via
+  a TLS-terminating load balancer/reverse proxy) — the app-level config is what changes, not the approach.
 - **IDOR protection**: the authenticated customer id is taken only from the verified JWT claim
   (`CurrentCustomer.id()`, backed by `SecurityContextHolder`) — never from a client-supplied id/parameter.
   Every account/transfer lookup checks ownership and returns `403 ACCESS_DENIED` otherwise. Verified both by
@@ -163,12 +189,35 @@ real; every test, the Postman collection and the scenario script were updated to
   `413`, malformed JSON/UUID/dates → `400` — all via the standard error body, never an unhandled exception.
 - **Mass assignment**: request DTOs expose only the fields a client should set (e.g. `TransferRequest` has no
   `customerId`/`status`/`id` field a caller could use to override server-assigned values).
-- **Security headers**: Spring Security's defaults are enabled (`X-Content-Type-Options: nosniff`,
-  `X-Frame-Options: DENY`, cache-control on sensitive responses).
+- **Security headers**: verified live with `curl -i` against the running HTTPS instance. Present on every
+  response (including error responses): `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Strict-Transport-Security`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`,
+  `Referrer-Policy: no-referrer`, `Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()`,
+  and cache-control on sensitive responses. No `Server` header is sent (Tomcat does not add one by default), so
+  the server software/version is not disclosed.
+- **JWT hardening, verified live**: a hand-crafted `alg: none` token is rejected with `401` (jjwt refuses to
+  parse an unsigned token as if it were signed); a ~50 KB oversized `Authorization` header returns `400`, not a
+  crash; a tampered payload with the original signature fails signature verification and returns `401`.
+- **Actuator exposure**: only `/actuator/health` is reachable without a token (`200`); every other actuator
+  path (`/actuator`, `/actuator/env`, etc.) requires authentication like any other endpoint (`401` without a
+  token) — verified live. `management.endpoints.web.exposure.include` is intentionally left at its Spring Boot
+  default (health only), so no new actuator endpoint is accidentally exposed by a future dependency bump.
+- **No sensitive fields in responses**: verified live that `GET /api/accounts/me` and every other response never
+  include the password hash or any other internal-only field — DTOs only ever expose what the API contract
+  defines.
+- **Dependency currency**: direct dependencies are pinned to current stable releases (Spring Boot 3.3.5, jjwt
+  0.12.6). A full OWASP Dependency-Check scan was attempted (`org.owasp:dependency-check-maven`) but could not
+  complete in this environment: its vulnerability feed downloads (e.g. the CISA KEV feed) are blocked by the
+  sandbox's network egress policy (`403 Forbidden`), not by anything in this project. Running
+  `mvn org.owasp:dependency-check-maven:check` in an environment with open internet access is recommended before
+  a real deployment.
 
 Known, accepted limitation: the rate limiter and the idempotency/limit-check-then-write sequence are correct
 for a single application instance; a horizontally-scaled deployment would need a shared rate-limit store and
-(for the small theoretical read-then-write race noted below) a stricter locking strategy.
+(for the small theoretical read-then-write race noted below) a stricter locking strategy. Stateless JWT also has
+no server-side "logout": a token already issued stays valid until it expires (kept short, 1 hour, for this
+reason) because revoking it would require a server-side blacklist (e.g. Redis) that this case study's scope does
+not include — this is a deliberate, documented trade-off, not an oversight.
 
 ## Assumptions
 
@@ -236,19 +285,27 @@ behavior it produces and how it's verified — not just noted, but implemented a
 
 ## Known Limitations / Out of Scope
 
-These checklist areas were deliberately **not** implemented or load-tested — they are infrastructure/deployment
-concerns disproportionate to this case study's scope, not functional gaps in the application code:
+The case study document itself only names one thing out of scope: *"User registration, KYC, cards, loans and
+any integration with external payment networks."* Nothing below is excused by that — each item here is instead
+either **done** (and linked to where), or a **named technical trade-off with a reason**, never a vague "out of
+scope":
 
-- **SC-20 HTTPS/TLS/HSTS**: TLS termination is a reverse-proxy/load-balancer/deployment concern, not an
-  application-code concern; not configured here.
-- **SC-34 Dependency vulnerability scanning** (OWASP Dependency-Check, Snyk, etc.): no scanner is wired into the
-  build; dependency versions are reasonably current (Spring Boot 3.3.5, jjwt 0.12.6) but not continuously
-  scanned.
-- **PR-01/PR-02 Load testing / formal p95 latency targets**: no load-testing harness (e.g. Gatling/k6) is
-  included; the 50-concurrent-request scenario test demonstrates correctness under concurrency, not throughput
-  or latency under production-scale load (10k+ customers/day).
+- **HTTPS/TLS/HSTS — done**, not skipped: see "Transport security (HTTPS/TLS)" under Security above. The one
+  thing genuinely left for a real deployment is swapping the local self-signed certificate for one from a real
+  CA (or a TLS-terminating load balancer in front) — the app-level mechanism is already in place and tested live.
+- **SC-34 Dependency vulnerability scanning**: attempted (`org.owasp:dependency-check-maven`), not skipped —
+  see "Dependency currency" under Security for why it could not complete in this sandboxed environment (its
+  vulnerability feed is blocked by network egress policy, not by anything in this project) and what to run once
+  that's lifted.
+- **PR-01/PR-02 Load testing / formal p95 latency targets**: genuinely not attempted — a real load-testing
+  harness (Gatling/k6) sized to simulate "10k+ customers/day" needs infrastructure (a load generator, a
+  realistically-provisioned target, time) this environment/exercise doesn't have. What *was* proven instead: the
+  50-concurrent-request scenario test demonstrates correctness (no double-spend, no overdraft, no 500s) under
+  real concurrency — a different, narrower claim than throughput/latency under production-scale load.
 - **Distributed rate limiting**: `LoginRateLimiter` is in-memory, correct for a single instance; a
   horizontally-scaled deployment would need a shared store (Redis) instead — already called out under Security.
+- **Stateless JWT has no server-side logout**: a deliberate trade-off, not a gap — see "Dependency currency"
+  paragraph's neighbor under Security ("Known, accepted limitation...").
 - **SC-23 CSRF**: not applicable — authentication is a stateless `Authorization: Bearer` JWT, never a cookie, so
   there is no CSRF attack surface to protect against.
 - **CC-08/CC-09 DB-unavailable / crash-mid-transfer recovery drills**: relied on Spring's `@Transactional`

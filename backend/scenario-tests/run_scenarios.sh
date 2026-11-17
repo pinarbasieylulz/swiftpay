@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # End-to-end user-scenario tests against a running SwiftPay backend.
-# Usage: ./run_scenarios.sh (assumes backend is up on localhost:8080 and
-# the dev DB has been reset to the V2__seed.sql state before running).
+# Usage: ./run_scenarios.sh (assumes backend is up on https://localhost:8443 with its
+# default self-signed dev certificate, and the dev DB has been reset to the
+# V2__seed.sql state before running). Set BASE to override (e.g. for a plain-HTTP
+# run with server.ssl.enabled=false during local debugging).
 set -uo pipefail
 
-BASE="http://localhost:8080"
+BASE="${BASE:-https://localhost:8443}"
+# -k: the dev keystore is self-signed (see scripts/generate-keystore.sh) — this is
+# expected and safe for local/dev-only scenario testing, never for production traffic.
+CURL_OPTS="-sk"
 PASS=0
 FAIL=0
 FAILED_NAMES=()
@@ -16,16 +21,16 @@ req() {
   local method="$1" path="$2" token="$3" body="$4"
   if [ -n "$token" ]; then
     if [ -n "$body" ]; then
-      curl -s -w '\n%{http_code}' -X "$method" "$BASE$path" \
+      curl $CURL_OPTS -w '\n%{http_code}' -X "$method" "$BASE$path" \
         -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "$body"
     else
-      curl -s -w '\n%{http_code}' -X "$method" "$BASE$path" -H "Authorization: Bearer $token"
+      curl $CURL_OPTS -w '\n%{http_code}' -X "$method" "$BASE$path" -H "Authorization: Bearer $token"
     fi
   else
     if [ -n "$body" ]; then
-      curl -s -w '\n%{http_code}' -X "$method" "$BASE$path" -H "Content-Type: application/json" -d "$body"
+      curl $CURL_OPTS -w '\n%{http_code}' -X "$method" "$BASE$path" -H "Content-Type: application/json" -d "$body"
     else
-      curl -s -w '\n%{http_code}' -X "$method" "$BASE$path"
+      curl $CURL_OPTS -w '\n%{http_code}' -X "$method" "$BASE$path"
     fi
   fi
 }
@@ -334,7 +339,7 @@ echo "--- firing 50 concurrent transfers of 1000.00 each from Alice to Bob ---"
 mkdir -p /tmp/swiftpay-concurrency
 rm -f /tmp/swiftpay-concurrency/*.out
 for i in $(seq 1 50); do
-  (curl -s -o "/tmp/swiftpay-concurrency/$i.out" -w '%{http_code}' -X POST "$BASE/api/transfers" \
+  (curl -sk -o "/tmp/swiftpay-concurrency/$i.out" -w '%{http_code}' -X POST "$BASE/api/transfers" \
     -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" \
     -d "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":1000.00,\"description\":\"concurrent\",\"idempotencyKey\":\"$(uid)\"}" \
     > "/tmp/swiftpay-concurrency/$i.status") &
@@ -387,7 +392,7 @@ check "ID-04: idempotency key too short -> 400 VALIDATION_ERROR" 400 \
   "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
 
 # VA-51: wrong Content-Type -> 415.
-RAW=$(curl -s -o /tmp/body.$$ -w "%{http_code}" -X POST "$BASE/api/transfers" \
+RAW=$(curl -sk -o /tmp/body.$$ -w "%{http_code}" -X POST "$BASE/api/transfers" \
   -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: text/plain" \
   --data "sourceAccountId=x")
 if [ "$RAW" = "415" ]; then
@@ -398,7 +403,7 @@ fi
 rm -f /tmp/body.$$
 
 # VA-55: wrong HTTP method -> 405.
-RAW=$(curl -s -o /tmp/body.$$ -w "%{http_code}" -X DELETE "$BASE/api/transfers" -H "Authorization: Bearer $ALICE_TOKEN")
+RAW=$(curl -sk -o /tmp/body.$$ -w "%{http_code}" -X DELETE "$BASE/api/transfers" -H "Authorization: Bearer $ALICE_TOKEN")
 if [ "$RAW" = "405" ]; then
   echo "PASS: VA-55 wrong HTTP method -> 405"; PASS=$((PASS+1))
 else
@@ -410,7 +415,7 @@ rm -f /tmp/body.$$
 RAW=$(python3 -c "
 import json
 print(json.dumps({'sourceAccountId':'$ALICE_ACC','destinationIban':'$BOB_IBAN','amount':5.00,'description':'x'*2000000,'idempotencyKey':'$(uid)'}))
-" | curl -s -o /tmp/body.$$ -w "%{http_code}" -X POST "$BASE/api/transfers" \
+" | curl -sk -o /tmp/body.$$ -w "%{http_code}" -X POST "$BASE/api/transfers" \
   -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" --data-binary @-)
 if [ "$RAW" = "413" ]; then
   echo "PASS: VA-54 oversized payload -> 413"; PASS=$((PASS+1))
