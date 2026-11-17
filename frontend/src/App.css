@@ -1,0 +1,154 @@
+:root {
+  --color-bg: #f4f6f8;
+  --color-surface: #ffffff;
+  --color-primary: #0f4c81;
+  --color-primary-dark: #0a3860;
+  --color-border: #e1e5ea;
+  --color-text: #1a2330;
+  --color-text-muted: #5b6676;
+  --color-success-bg: #e6f6ec;
+  --color-success-text: #1e7a43;
+  --color-error-bg: #fdecec;
+  --color-error-text: #b3261e;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--color-primary);
+  color: white;
+  flex-wrap: wrap;
+}
+
+.app-header .brand { font-weight: 700; font-size: 1.1rem; }
+
+.app-header nav { display: flex; gap: 1rem; flex: 1; flex-wrap: wrap; }
+
+.app-header nav a {
+  color: rgba(255,255,255,0.85);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+.app-header nav a.active { color: white; font-weight: 600; border-bottom: 2px solid white; }
+
+.app-content {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.centered-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.login-card { width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 0.75rem; }
+.login-card h1 { margin: 0; color: var(--color-primary); }
+.subtitle { color: var(--color-text-muted); margin-top: -0.5rem; }
+
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+input, select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+button {
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+button:hover { background: var(--color-primary-dark); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+a.button {
+  background: var(--color-primary);
+  color: white;
+  text-decoration: none;
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.link-button {
+  background: none;
+  color: var(--color-primary);
+  padding: 0;
+  text-decoration: underline;
+}
+.link-button:hover { background: none; color: var(--color-primary-dark); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 0.5rem 0.4rem; border-bottom: 1px solid var(--color-border); font-size: 0.95rem; }
+th { color: var(--color-text-muted); font-weight: 600; }
+
+.result-banner { padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.9rem; }
+.result-banner.error { background: var(--color-error-bg); color: var(--color-error-text); }
+.result-banner.success { background: var(--color-success-bg); color: var(--color-success-text); }
+
+.field-error { color: var(--color-error-text); font-size: 0.8rem; }
+
+.empty-state, .loading { color: var(--color-text-muted); padding: 1rem 0; }
+
+.limit-grid { display: flex; gap: 2rem; flex-wrap: wrap; }
+.limit-grid > div { display: flex; flex-direction: column; }
+.limit-label { color: var(--color-text-muted); font-size: 0.85rem; }
+.limit-grid strong { font-size: 1.3rem; }
+.limit-total { color: var(--color-text-muted); font-size: 0.8rem; }
+
+.filter-bar { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+.filter-bar button { height: 2.5rem; }
+
+.status-badge { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+.status-completed { background: var(--color-success-bg); color: var(--color-success-text); }
+.status-failed { background: var(--color-error-bg); color: var(--color-error-text); }
+.status-pending { background: #fff6e0; color: #8a6300; }
+
+.detail-card dl { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; }
+.detail-card dt { color: var(--color-text-muted); }
+.detail-card dd { margin: 0; }
+.back-link { color: var(--color-primary); text-decoration: none; font-size: 0.9rem; }
+.mono { font-family: ui-monospace, monospace; font-size: 0.85rem; }

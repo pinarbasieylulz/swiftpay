@@ -6,4 +6,5 @@ node_modules/
 dist/
 build/
 .env
+!frontend/.env
 backend/src/main/resources/keystore.p12

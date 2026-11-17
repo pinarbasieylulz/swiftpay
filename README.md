@@ -5,9 +5,9 @@ SwiftPay dijital banka uygulaması için anlık para transferi özelliği. Bu re
 ## Yapı
 
 - `backend/` — Spring Boot 3, Java 21, PostgreSQL, JWT auth. Detaylar için `backend/README.md`.
-- `frontend/` — React UI (ayrı commit ile eklenecek).
+- `frontend/` — React + TypeScript UI. Detaylar için `frontend/README.md`.
 
 ## Durum
 
-- [x] Backend: transfer, hesap, istatistik API'leri, idempotency, limit kontrolleri, JWT auth, testler
-- [ ] Frontend
+- [x] Backend: transfer, hesap, istatistik API'leri, idempotency, limit kontrolleri, JWT auth, HTTPS/TLS, testler
+- [x] Frontend: giriş, hesaplar/limitler, yeni transfer, transfer listesi/detayı, aylık istatistikler
