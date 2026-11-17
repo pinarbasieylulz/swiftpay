@@ -9,8 +9,11 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.List;
 
@@ -95,6 +98,45 @@ class GlobalExceptionHandlerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody().getErrorCode()).isEqualTo("TRANSFER_CONFLICT");
+    }
+
+    @Test
+    void handleUnsupportedMediaType_returns415() {
+        HttpMediaTypeNotSupportedException ex = new HttpMediaTypeNotSupportedException("text/plain not supported");
+
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response = handler.handleUnsupportedMediaType(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("UNSUPPORTED_MEDIA_TYPE");
+    }
+
+    @Test
+    void handleMethodNotAllowed_returns405() {
+        HttpRequestMethodNotSupportedException ex = new HttpRequestMethodNotSupportedException("DELETE");
+
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response = handler.handleMethodNotAllowed(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("METHOD_NOT_ALLOWED");
+    }
+
+    @Test
+    void handlePayloadTooLarge_returns413() {
+        MaxUploadSizeExceededException ex = new MaxUploadSizeExceededException(1_000_000);
+
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response = handler.handlePayloadTooLarge(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("PAYLOAD_TOO_LARGE");
+    }
+
+    @Test
+    void handleApiException_validationExceptionSubtype_mapsTo400() {
+        ResponseEntity<com.swiftpay.dto.ApiErrorResponse> response =
+                handler.handleApiException(new ValidationException("startDate must not be after endDate"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().getErrorCode()).isEqualTo("VALIDATION_ERROR");
     }
 
     @Test

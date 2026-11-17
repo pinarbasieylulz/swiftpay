@@ -11,7 +11,7 @@ class TransferTest {
 
     private Transfer newTransfer() {
         return new Transfer(UUID.randomUUID(), "idem-1", UUID.randomUUID(), UUID.randomUUID(),
-                "TR110006200000000011110001", UUID.randomUUID(), new BigDecimal("100.00"), "TRY", "desc");
+                "TR180006200000000011110001", UUID.randomUUID(), new BigDecimal("100.00"), "TRY", "desc");
     }
 
     @Test
@@ -23,7 +23,7 @@ class TransferTest {
         assertThat(transfer.getCurrency()).isEqualTo("TRY");
         assertThat(transfer.getDescription()).isEqualTo("desc");
         assertThat(transfer.getIdempotencyKey()).isEqualTo("idem-1");
-        assertThat(transfer.getDestinationIban()).isEqualTo("TR110006200000000011110001");
+        assertThat(transfer.getDestinationIban()).isEqualTo("TR180006200000000011110001");
         assertThat(transfer.getDestinationAccountId()).isNotNull();
         assertThat(transfer.getCreatedAt()).isNotNull();
         assertThat(transfer.getCompletedAt()).isNull();

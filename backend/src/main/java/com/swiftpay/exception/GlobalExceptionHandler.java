@@ -9,10 +9,13 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -64,6 +67,30 @@ public class GlobalExceptionHandler {
         log.warn("[{}] TRANSFER_CONFLICT: optimistic lock failure escaped service layer", traceId);
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiErrorResponse("TRANSFER_CONFLICT", "Account was modified concurrently, please retry", traceId));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        String traceId = traceId();
+        log.warn("[{}] UNSUPPORTED_MEDIA_TYPE: {}", traceId, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(new ApiErrorResponse("UNSUPPORTED_MEDIA_TYPE", "Content-Type must be application/json", traceId));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        String traceId = traceId();
+        log.warn("[{}] METHOD_NOT_ALLOWED: {}", traceId, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(new ApiErrorResponse("METHOD_NOT_ALLOWED", "HTTP method not supported for this endpoint", traceId));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handlePayloadTooLarge(MaxUploadSizeExceededException ex) {
+        String traceId = traceId();
+        log.warn("[{}] PAYLOAD_TOO_LARGE: {}", traceId, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(new ApiErrorResponse("PAYLOAD_TOO_LARGE", "Request body is too large", traceId));
     }
 
     @ExceptionHandler({BadCredentialsException.class, AccessDeniedException.class})

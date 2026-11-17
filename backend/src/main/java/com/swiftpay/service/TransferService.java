@@ -10,6 +10,7 @@ import com.swiftpay.exception.AccessDeniedCustomException;
 import com.swiftpay.exception.ResourceNotFoundException;
 import com.swiftpay.exception.TransferConflictException;
 import com.swiftpay.exception.TransferRejectedException;
+import com.swiftpay.config.BusinessProperties;
 import com.swiftpay.repository.AccountRepository;
 import com.swiftpay.repository.CustomerRepository;
 import com.swiftpay.repository.TransferRepository;
@@ -20,8 +21,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -31,12 +33,14 @@ public class TransferService {
     private final TransferRepository transferRepository;
     private final AccountRepository accountRepository;
     private final CustomerRepository customerRepository;
+    private final ZoneId businessZone;
 
     public TransferService(TransferRepository transferRepository, AccountRepository accountRepository,
-                            CustomerRepository customerRepository) {
+                            CustomerRepository customerRepository, BusinessProperties businessProperties) {
         this.transferRepository = transferRepository;
         this.accountRepository = accountRepository;
         this.customerRepository = customerRepository;
+        this.businessZone = ZoneId.of(businessProperties.getBusiness().getZoneId());
     }
 
     @Transactional
@@ -46,6 +50,14 @@ public class TransferService {
             Transfer previous = existing.get();
             if (!previous.getCustomerId().equals(customerId)) {
                 throw new AccessDeniedCustomException("Idempotency key belongs to another customer");
+            }
+            boolean sameRequest = previous.getSourceAccountId().equals(request.getSourceAccountId())
+                    && previous.getDestinationIban().equals(request.getDestinationIban())
+                    && previous.getAmount().compareTo(request.getAmount()) == 0
+                    && Objects.equals(previous.getDescription(), request.getDescription());
+            if (!sameRequest) {
+                throw new TransferConflictException(
+                        "Idempotency key was already used with a different request payload");
             }
             return TransferResponse.from(previous);
         }
@@ -73,8 +85,8 @@ public class TransferService {
                     "Amount exceeds the per-transfer limit of " + customer.getPerTransferLimit());
         }
 
-        Instant startOfDay = LocalDate.now(ZoneOffset.UTC).atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant startOfNextDay = startOfDay.plusSeconds(86400);
+        Instant startOfDay = LocalDate.now(businessZone).atStartOfDay(businessZone).toInstant();
+        Instant startOfNextDay = LocalDate.now(businessZone).plusDays(1).atStartOfDay(businessZone).toInstant();
         BigDecimal dailySpent = transferRepository.sumCompletedAmount(
                 source.getId(), TransferStatus.COMPLETED, startOfDay, startOfNextDay);
         if (dailySpent.add(amount).compareTo(customer.getDailyLimit()) > 0) {
@@ -82,10 +94,10 @@ public class TransferService {
                     "Transfer would exceed the daily limit of " + customer.getDailyLimit());
         }
 
-        Instant startOfMonth = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1)
-                .atStartOfDay(ZoneOffset.UTC).toInstant();
-        Instant startOfNextMonth = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1).plusMonths(1)
-                .atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant startOfMonth = LocalDate.now(businessZone).withDayOfMonth(1)
+                .atStartOfDay(businessZone).toInstant();
+        Instant startOfNextMonth = LocalDate.now(businessZone).withDayOfMonth(1).plusMonths(1)
+                .atStartOfDay(businessZone).toInstant();
         BigDecimal monthlySpent = transferRepository.sumCompletedAmount(
                 source.getId(), TransferStatus.COMPLETED, startOfMonth, startOfNextMonth);
         if (monthlySpent.add(amount).compareTo(customer.getMonthlyLimit()) > 0) {
@@ -131,6 +143,9 @@ public class TransferService {
     public List<TransferResponse> listTransfers(UUID customerId, Instant startDate, Instant endDate) {
         Instant start = startDate != null ? startDate : Instant.EPOCH;
         Instant end = endDate != null ? endDate : Instant.now().plusSeconds(1);
+        if (start.isAfter(end)) {
+            throw new com.swiftpay.exception.ValidationException("startDate must not be after endDate");
+        }
         return transferRepository.findByCustomerIdAndCreatedAtBetweenOrderByCreatedAtDesc(customerId, start, end)
                 .stream().map(TransferResponse::from).collect(Collectors.toList());
     }

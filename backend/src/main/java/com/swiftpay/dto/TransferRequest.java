@@ -1,8 +1,10 @@
 package com.swiftpay.dto;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -13,19 +15,23 @@ public class TransferRequest {
     @NotNull
     private UUID sourceAccountId;
 
-    @NotBlank
-    @Size(min = 15, max = 34)
+    @ValidIban
     private String destinationIban;
 
     @NotNull
     @DecimalMin(value = "0.01", message = "amount must be greater than zero")
+    @Digits(integer = 17, fraction = 2, message = "amount must have at most 17 integer digits and 2 decimal places")
     private BigDecimal amount;
 
     @Size(max = 255)
+    // Rejects raw control characters / CR / LF so a description can never forge an
+    // extra log line (log injection) or corrupt a plain-text log file.
+    @Pattern(regexp = "^[\\P{Cc}]*$", message = "description must not contain control characters")
     private String description;
 
     @NotBlank
-    @Size(max = 100)
+    @Size(min = 8, max = 100)
+    @Pattern(regexp = "^[A-Za-z0-9._:-]+$", message = "idempotencyKey must be alphanumeric (., _, :, - allowed)")
     private String idempotencyKey;
 
     public UUID getSourceAccountId() {

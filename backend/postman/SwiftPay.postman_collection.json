@@ -8,7 +8,7 @@
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "token", "value": "" },
     { "key": "aliceAccountId", "value": "aaaaaaaa-1111-1111-1111-111111111111" },
-    { "key": "bobIban", "value": "TR110006200000000022220002" },
+    { "key": "bobIban", "value": "TR660006200000000022220002" },
     { "key": "transferId", "value": "" }
   ],
   "item": [

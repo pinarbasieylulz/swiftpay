@@ -24,7 +24,14 @@ swiftpay:
     jwt-secret: ${JWT_SECRET:change-this-secret-change-this-secret-change-this}
     jwt-expiration-ms: 3600000
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
+  business:
+    # Day/month boundaries for daily & monthly transfer limits are computed in this zone.
+    zone-id: Europe/Istanbul
   limits:
+    # Defaults applied to new customers (see V2__seed.sql). Actual enforcement reads the
+    # per-customer columns on `customers` (per_transfer_limit/daily_limit/monthly_limit),
+    # so limits remain configurable per customer without a code change. These values are
+    # validated at startup (fail fast) so the defaults themselves can never be nonsensical.
     per-transfer: 50000.00
     daily-total: 100000.00
     monthly-total: 500000.00

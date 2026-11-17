@@ -54,14 +54,14 @@ check() {
 echo "=== Resetting dev DB to seed state ==="
 PGPASSWORD=swiftpay psql -h localhost -U swiftpay -d swiftpay -v ON_ERROR_STOP=1 -c "
 TRUNCATE transfers;
-UPDATE accounts SET balance=200000.00, version=0 WHERE iban='TR110006200000000011110001';
-UPDATE accounts SET balance=50000.00, version=0 WHERE iban='TR110006200000000022220002';
+UPDATE accounts SET balance=200000.00, version=0 WHERE iban='TR180006200000000011110001';
+UPDATE accounts SET balance=50000.00, version=0 WHERE iban='TR660006200000000022220002';
 " >/dev/null
 
 ALICE_ACC="aaaaaaaa-1111-1111-1111-111111111111"
 BOB_ACC="aaaaaaaa-2222-2222-2222-222222222222"
-ALICE_IBAN="TR110006200000000011110001"
-BOB_IBAN="TR110006200000000022220002"
+ALICE_IBAN="TR180006200000000011110001"
+BOB_IBAN="TR660006200000000022220002"
 
 ALICE_TOKEN=$(req POST /api/auth/login "" '{"username":"alice","password":"Passw0rd!"}' | sed '$d' | jq -r .token)
 BOB_TOKEN=$(req POST /api/auth/login "" '{"username":"bob","password":"Passw0rd!"}' | sed '$d' | jq -r .token)
@@ -147,9 +147,15 @@ check "nonexistent source account -> error, not 500" 404 \
   "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$(uid)\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
   "jq -e '.errorCode == \"RESOURCE_NOT_FOUND\"'"
 
-check "unknown destination IBAN -> DESTINATION_NOT_FOUND" 422 \
-  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"TR999999999999999999999999\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
+# TR0300099999999999999999999 99 has a valid mod-97 checksum but matches no seeded
+# account -- this is what VA-24 (valid format, not in system) actually exercises.
+check "unknown destination IBAN (valid checksum, not in system) -> DESTINATION_NOT_FOUND" 422 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"TR030009999999999999999999\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
   "jq -e '.errorCode == \"DESTINATION_NOT_FOUND\"'"
+
+check "malformed-checksum IBAN -> 400 VALIDATION_ERROR (rejected before any DB lookup)" 400 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"TR999999999999999999999999\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
 
 check "self transfer -> SELF_TRANSFER_NOT_ALLOWED" 422 \
   "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$ALICE_IBAN\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
@@ -267,9 +273,12 @@ check "amount -0.01 -> rejected" 400 \
 
 echo "=== MALICIOUS / EXTREME INPUT SCENARIOS ==="
 
-check "absurdly large amount -> rejected (PER_TRANSFER_LIMIT_EXCEEDED), not 500" 422 \
+# A 28-digit amount overflows the DB's NUMERIC(19,2)/the @Digits(integer=17) bound,
+# so it is now rejected at validation time (400) -- before ever reaching the limit
+# check or the database. Either way the key property holds: never a 500.
+check "absurdly large amount -> rejected at validation, not 500" 400 \
   "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":99999999999999999999999999.99,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
-  "jq -e '.errorCode == \"PER_TRANSFER_LIMIT_EXCEEDED\"'"
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
 
 check "amount as non-numeric string 'NaN' -> 400, not 500" 400 \
   "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":\"NaN\",\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
@@ -283,9 +292,12 @@ check "amount missing entirely -> 400, not 500" 400 \
 # (shorter payloads are correctly rejected by validation before that -- also safe,
 # just a different, earlier layer).
 SQLI_IBAN="' OR '1'='1' --xxx"
-check "SQL-injection-shaped IBAN -> treated as a literal, unknown IBAN, not 500" 422 \
+# The IBAN format/checksum validator now rejects this outright (400) before it can
+# ever reach a repository query -- a stronger defense than letting it fall through
+# to "unknown destination" as a parameterized-but-executed lookup.
+check "SQL-injection-shaped IBAN -> 400 VALIDATION_ERROR, never reaches a query" 400 \
   "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$SQLI_IBAN\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
-  "jq -e '.errorCode == \"DESTINATION_NOT_FOUND\"'"
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
 
 check "10000-char IBAN -> 400, not 500" 400 \
   "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$(python3 -c "print('A'*10000)")\",\"amount\":10.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
@@ -304,9 +316,10 @@ check "invalid startDate format -> 400, not 500" 400 \
   "$(req GET "/api/transfers?startDate=not-a-date" "$ALICE_TOKEN" "")" \
   "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
 
-check "endDate before startDate -> no crash (empty list), not 500" 200 \
+# LT-07: startDate after endDate is a client error, not silently an empty result.
+check "endDate before startDate -> 400 VALIDATION_ERROR, not 500 or a silent empty list" 400 \
   "$(req GET "/api/transfers?startDate=2026-12-01T00:00:00Z&endDate=2026-01-01T00:00:00Z" "$ALICE_TOKEN" "")" \
-  "jq -e 'length == 0'"
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
 
 echo "=== CONCURRENCY SCENARIO ==="
 
@@ -357,6 +370,77 @@ if (( $(python3 -c "print(1 if float('$FINAL_ALICE_BAL') >= 0 else 0)") )); then
   echo "PASS: balance never went negative under concurrency"; PASS=$((PASS+1))
 else
   echo "FAIL: balance never went negative under concurrency"; FAIL=$((FAIL+1)); FAILED_NAMES+=("concurrency: non-negative balance")
+fi
+
+echo "=== CHECKLIST FOLLOW-UP: IDEMPOTENCY, HTTP SEMANTICS, IBAN EDGE CASES, RECEIVER VISIBILITY ==="
+
+# ID-02: same idempotency key, different payload -> 409, no second transfer.
+REUSE_KEY=$(uid)
+req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":5.00,\"description\":\"first\",\"idempotencyKey\":\"$REUSE_KEY\"}" > /dev/null
+check "ID-02: same idempotency key with a different amount -> 409 TRANSFER_CONFLICT" 409 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":9.00,\"description\":\"first\",\"idempotencyKey\":\"$REUSE_KEY\"}")" \
+  "jq -e '.errorCode == \"TRANSFER_CONFLICT\"'"
+
+# ID-04: idempotency key shorter than the required minimum -> 400.
+check "ID-04: idempotency key too short -> 400 VALIDATION_ERROR" 400 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"$BOB_IBAN\",\"amount\":5.00,\"description\":\"x\",\"idempotencyKey\":\"a\"}")" \
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
+
+# VA-51: wrong Content-Type -> 415.
+RAW=$(curl -s -o /tmp/body.$$ -w "%{http_code}" -X POST "$BASE/api/transfers" \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: text/plain" \
+  --data "sourceAccountId=x")
+if [ "$RAW" = "415" ]; then
+  echo "PASS: VA-51 wrong Content-Type -> 415"; PASS=$((PASS+1))
+else
+  echo "FAIL: VA-51 wrong Content-Type -> 415 -- got $RAW, body=$(cat /tmp/body.$$)"; FAIL=$((FAIL+1)); FAILED_NAMES+=("VA-51 wrong content-type")
+fi
+rm -f /tmp/body.$$
+
+# VA-55: wrong HTTP method -> 405.
+RAW=$(curl -s -o /tmp/body.$$ -w "%{http_code}" -X DELETE "$BASE/api/transfers" -H "Authorization: Bearer $ALICE_TOKEN")
+if [ "$RAW" = "405" ]; then
+  echo "PASS: VA-55 wrong HTTP method -> 405"; PASS=$((PASS+1))
+else
+  echo "FAIL: VA-55 wrong HTTP method -> 405 -- got $RAW, body=$(cat /tmp/body.$$)"; FAIL=$((FAIL+1)); FAILED_NAMES+=("VA-55 wrong method")
+fi
+rm -f /tmp/body.$$
+
+# VA-54: oversized payload -> 413.
+RAW=$(python3 -c "
+import json
+print(json.dumps({'sourceAccountId':'$ALICE_ACC','destinationIban':'$BOB_IBAN','amount':5.00,'description':'x'*2000000,'idempotencyKey':'$(uid)'}))
+" | curl -s -o /tmp/body.$$ -w "%{http_code}" -X POST "$BASE/api/transfers" \
+  -H "Authorization: Bearer $ALICE_TOKEN" -H "Content-Type: application/json" --data-binary @-)
+if [ "$RAW" = "413" ]; then
+  echo "PASS: VA-54 oversized payload -> 413"; PASS=$((PASS+1))
+else
+  echo "FAIL: VA-54 oversized payload -> 413 -- got $RAW, body=$(head -c 300 /tmp/body.$$)"; FAIL=$((FAIL+1)); FAILED_NAMES+=("VA-54 oversized payload")
+fi
+rm -f /tmp/body.$$
+
+# VA-23 / VA-27: lowercase, embedded spaces, and Cyrillic look-alike IBANs are all
+# rejected by format validation rather than silently normalized.
+check "VA-23 lowercase IBAN -> 400 VALIDATION_ERROR" 400 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"tr180006200000000011110001\",\"amount\":5.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
+
+check "VA-23 IBAN with embedded spaces -> 400 VALIDATION_ERROR" 400 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"TR18 0006 2000 0000 0011 1100 01\",\"amount\":5.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
+
+check "VA-27 IBAN with Cyrillic look-alike characters -> 400 VALIDATION_ERROR" 400 \
+  "$(req POST /api/transfers "$ALICE_TOKEN" "{\"sourceAccountId\":\"$ALICE_ACC\",\"destinationIban\":\"TР180006200000000011110001\",\"amount\":5.00,\"description\":\"x\",\"idempotencyKey\":\"$(uid)\"}")" \
+  "jq -e '.errorCode == \"VALIDATION_ERROR\"'"
+
+# AZ-04 / LT-13 / ST-04: receiver does not see a transfer it only received -- Bob
+# received money from Alice above, but it must not appear in Bob's own transfer list.
+BOB_LIST=$(req GET /api/transfers "$BOB_TOKEN" "" | sed '$d')
+BOB_SEES_INCOMING=$(echo "$BOB_LIST" | jq "[.[] | select(.destinationIban == \"$BOB_IBAN\")] | length")
+if [ "$BOB_SEES_INCOMING" = "0" ]; then
+  echo "PASS: AZ-04/LT-13 receiver's own transfer list does not include incoming transfers (documented: outgoing-only)"; PASS=$((PASS+1))
+else
+  echo "FAIL: AZ-04/LT-13 receiver's list unexpectedly includes an incoming transfer"; FAIL=$((FAIL+1)); FAILED_NAMES+=("AZ-04 receiver visibility")
 fi
 
 echo

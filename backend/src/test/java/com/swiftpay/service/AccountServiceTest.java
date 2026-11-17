@@ -7,10 +7,10 @@ import com.swiftpay.exception.ResourceNotFoundException;
 import com.swiftpay.repository.AccountRepository;
 import com.swiftpay.repository.CustomerRepository;
 import com.swiftpay.repository.TransferRepository;
+import com.swiftpay.config.BusinessProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -34,7 +34,6 @@ class AccountServiceTest {
     @Mock
     private TransferRepository transferRepository;
 
-    @InjectMocks
     private AccountService accountService;
 
     private UUID customerId;
@@ -43,6 +42,9 @@ class AccountServiceTest {
 
     @BeforeEach
     void setUp() {
+        BusinessProperties businessProperties = new BusinessProperties();
+        businessProperties.getBusiness().setZoneId("Europe/Istanbul");
+        accountService = new AccountService(accountRepository, customerRepository, transferRepository, businessProperties);
         customerId = UUID.randomUUID();
         account = new Account(UUID.randomUUID(), customerId, "TR1", new BigDecimal("500.00"), "TRY");
         customer = new Customer(customerId, "alice", "hash", "Alice",

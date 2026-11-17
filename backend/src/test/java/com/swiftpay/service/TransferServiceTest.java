@@ -10,13 +10,13 @@ import com.swiftpay.exception.AccessDeniedCustomException;
 import com.swiftpay.exception.ResourceNotFoundException;
 import com.swiftpay.exception.TransferConflictException;
 import com.swiftpay.exception.TransferRejectedException;
+import com.swiftpay.config.BusinessProperties;
 import com.swiftpay.repository.AccountRepository;
 import com.swiftpay.repository.CustomerRepository;
 import com.swiftpay.repository.TransferRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -40,7 +40,6 @@ class TransferServiceTest {
     @Mock
     private CustomerRepository customerRepository;
 
-    @InjectMocks
     private TransferService transferService;
 
     private UUID customerId;
@@ -52,13 +51,16 @@ class TransferServiceTest {
 
     @BeforeEach
     void setUp() {
+        BusinessProperties businessProperties = new BusinessProperties();
+        businessProperties.getBusiness().setZoneId("Europe/Istanbul");
+        transferService = new TransferService(transferRepository, accountRepository, customerRepository, businessProperties);
         customerId = UUID.randomUUID();
         sourceId = UUID.randomUUID();
         destId = UUID.randomUUID();
         customer = new Customer(customerId, "alice", "hash", "Alice",
                 new BigDecimal("50000.00"), new BigDecimal("100000.00"), new BigDecimal("500000.00"));
-        source = new Account(sourceId, customerId, "TR110006200000000011110001", new BigDecimal("1000.00"), "TRY");
-        destination = new Account(destId, UUID.randomUUID(), "TR110006200000000022220002", new BigDecimal("0.00"), "TRY");
+        source = new Account(sourceId, customerId, "TR180006200000000011110001", new BigDecimal("1000.00"), "TRY");
+        destination = new Account(destId, UUID.randomUUID(), "TR660006200000000022220002", new BigDecimal("0.00"), "TRY");
     }
 
     private TransferRequest request(BigDecimal amount, String iban, String idemKey) {
@@ -76,11 +78,11 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
-        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(accountRepository.findByIban("TR660006200000000022220002")).thenReturn(Optional.of(destination));
         when(transferRepository.sumCompletedAmount(any(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
         when(transferRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        TransferResponse response = transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1"));
+        TransferResponse response = transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR660006200000000022220002", "k1"));
 
         assertThat(response.getStatus()).isEqualTo("COMPLETED");
         assertThat(source.getBalance()).isEqualTo(new BigDecimal("900.00"));
@@ -92,11 +94,11 @@ class TransferServiceTest {
     @Test
     void createTransfer_duplicateIdempotencyKey_returnsPreviousResultWithoutMovingFundsAgain() {
         Transfer previous = new Transfer(UUID.randomUUID(), "k1", customerId, sourceId,
-                "TR110006200000000022220002", destId, new BigDecimal("100.00"), "TRY", "desc");
+                "TR660006200000000022220002", destId, new BigDecimal("100.00"), "TRY", "desc");
         previous.markCompleted();
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.of(previous));
 
-        TransferResponse response = transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1"));
+        TransferResponse response = transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR660006200000000022220002", "k1"));
 
         assertThat(response.getId()).isEqualTo(previous.getId());
         verify(accountRepository, never()).findById(any());
@@ -106,10 +108,10 @@ class TransferServiceTest {
     @Test
     void createTransfer_idempotencyKeyBelongsToAnotherCustomer_throwsAccessDenied() {
         Transfer previous = new Transfer(UUID.randomUUID(), "k1", UUID.randomUUID(), sourceId,
-                "TR110006200000000022220002", destId, new BigDecimal("100.00"), "TRY", "desc");
+                "TR660006200000000022220002", destId, new BigDecimal("100.00"), "TRY", "desc");
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.of(previous));
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(AccessDeniedCustomException.class);
     }
 
@@ -120,7 +122,7 @@ class TransferServiceTest {
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(otherOwnerAccount));
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("10.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("10.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(AccessDeniedCustomException.class);
     }
 
@@ -154,9 +156,9 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
-        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(accountRepository.findByIban("TR660006200000000022220002")).thenReturn(Optional.of(destination));
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("50001.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("50001.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(TransferRejectedException.class)
                 .hasMessageContaining("per-transfer limit");
     }
@@ -166,12 +168,12 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
-        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(accountRepository.findByIban("TR660006200000000022220002")).thenReturn(Optional.of(destination));
         source.credit(new BigDecimal("200000.00"));
         when(transferRepository.sumCompletedAmount(eq(sourceId), eq(TransferStatus.COMPLETED), any(), any()))
                 .thenReturn(new BigDecimal("99950.00"));
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(TransferRejectedException.class)
                 .hasMessageContaining("daily limit");
     }
@@ -181,7 +183,7 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("10.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("10.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -190,13 +192,13 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
-        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(accountRepository.findByIban("TR660006200000000022220002")).thenReturn(Optional.of(destination));
         source.credit(new BigDecimal("600000.00"));
         when(transferRepository.sumCompletedAmount(eq(sourceId), eq(TransferStatus.COMPLETED), any(), any()))
                 .thenReturn(BigDecimal.ZERO)
                 .thenReturn(new BigDecimal("499950.00"));
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(TransferRejectedException.class)
                 .hasMessageContaining("monthly limit");
     }
@@ -206,11 +208,11 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
-        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(accountRepository.findByIban("TR660006200000000022220002")).thenReturn(Optional.of(destination));
         when(transferRepository.sumCompletedAmount(any(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
         when(accountRepository.saveAndFlush(source)).thenThrow(new org.springframework.orm.ObjectOptimisticLockingFailureException(Account.class, sourceId));
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("100.00"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(TransferConflictException.class)
                 .hasMessageContaining("concurrently");
     }
@@ -232,10 +234,10 @@ class TransferServiceTest {
         when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.empty());
         when(customerRepository.findById(customerId)).thenReturn(Optional.of(customer));
         when(accountRepository.findById(sourceId)).thenReturn(Optional.of(source));
-        when(accountRepository.findByIban("TR110006200000000022220002")).thenReturn(Optional.of(destination));
+        when(accountRepository.findByIban("TR660006200000000022220002")).thenReturn(Optional.of(destination));
         when(transferRepository.sumCompletedAmount(any(), any(), any(), any())).thenReturn(BigDecimal.ZERO);
 
-        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("1000.01"), "TR110006200000000022220002", "k1")))
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, request(new BigDecimal("1000.01"), "TR660006200000000022220002", "k1")))
                 .isInstanceOf(TransferRejectedException.class)
                 .hasMessageContaining("insufficient");
     }
@@ -276,5 +278,40 @@ class TransferServiceTest {
 
         var result = transferService.listTransfers(customerId, null, null);
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void listTransfers_startAfterEnd_throwsValidationException() {
+        Instant start = Instant.parse("2026-02-01T00:00:00Z");
+        Instant end = Instant.parse("2026-01-01T00:00:00Z");
+
+        assertThatThrownBy(() -> transferService.listTransfers(customerId, start, end))
+                .isInstanceOf(com.swiftpay.exception.ValidationException.class);
+    }
+
+    @Test
+    void createTransfer_sameIdempotencyKeyDifferentAmount_throwsConflict() {
+        Transfer previous = new Transfer(UUID.randomUUID(), "k1", customerId, sourceId,
+                "TR660006200000000022220002", destId, new BigDecimal("10.00"), "TRY", "x");
+        when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.of(previous));
+
+        TransferRequest req = request(new BigDecimal("99.00"), "TR660006200000000022220002", "k1");
+
+        assertThatThrownBy(() -> transferService.createTransfer(customerId, req))
+                .isInstanceOf(TransferConflictException.class);
+    }
+
+    @Test
+    void createTransfer_sameIdempotencyKeySameBody_returnsPreviousWithoutConflict() {
+        Transfer previous = new Transfer(UUID.randomUUID(), "k1", customerId, sourceId,
+                "TR660006200000000022220002", destId, new BigDecimal("10.00"), "TRY", "x");
+        previous.markCompleted();
+        when(transferRepository.findByIdempotencyKey("k1")).thenReturn(Optional.of(previous));
+
+        TransferRequest req = request(new BigDecimal("10.00"), "TR660006200000000022220002", "k1");
+        req.setDescription("x");
+
+        TransferResponse response = transferService.createTransfer(customerId, req);
+        assertThat(response.getId()).isEqualTo(previous.getId());
     }
 }

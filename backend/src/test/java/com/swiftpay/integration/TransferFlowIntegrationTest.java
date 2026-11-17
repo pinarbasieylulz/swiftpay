@@ -29,7 +29,7 @@ class TransferFlowIntegrationTest {
     private ObjectMapper objectMapper;
 
     private static final UUID ALICE_ACCOUNT = UUID.fromString("aaaaaaaa-1111-1111-1111-111111111111");
-    private static final String BOB_IBAN = "TR110006200000000022220002";
+    private static final String BOB_IBAN = "TR660006200000000022220002";
 
     private String loginAs(String username) throws Exception {
         LoginRequest req = new LoginRequest();
@@ -139,7 +139,7 @@ class TransferFlowIntegrationTest {
         String token = loginAs("bob");
         TransferRequest req = transferRequest(
                 UUID.fromString("aaaaaaaa-2222-2222-2222-222222222222"),
-                "TR110006200000000011110001", new BigDecimal("999999.00"), "it-" + UUID.randomUUID());
+                "TR180006200000000011110001", new BigDecimal("999999.00"), "it-" + UUID.randomUUID());
 
         mockMvc.perform(post("/api/transfers")
                         .header("Authorization", "Bearer " + token)
