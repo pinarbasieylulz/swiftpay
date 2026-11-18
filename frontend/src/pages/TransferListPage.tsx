@@ -5,16 +5,24 @@ import type { TransferResponse } from '../types/api';
 import { StatusBadge } from '../components/StatusBadge';
 import { ApiError } from '../api/client';
 
+const PAGE_SIZE = 10;
+
 export function TransferListPage() {
   const [transfers, setTransfers] = useState<TransferResponse[] | null>(null);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
 
   function load() {
     setError(null);
     const promise = startDate && endDate ? listTransfersByDateRange(startDate, endDate) : listTransfers();
-    promise.then(setTransfers).catch((err) => setError(err instanceof ApiError ? err.message : 'Transferler yüklenemedi.'));
+    promise
+      .then((result) => {
+        setTransfers(result);
+        setPage(0);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Transferler yüklenemedi.'));
   }
 
   useEffect(load, []);
@@ -23,6 +31,9 @@ export function TransferListPage() {
     e.preventDefault();
     load();
   }
+
+  const totalPages = transfers ? Math.max(1, Math.ceil(transfers.length / PAGE_SIZE)) : 1;
+  const pageItems = transfers ? transfers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE) : [];
 
   return (
     <div className="stack">
@@ -39,29 +50,47 @@ export function TransferListPage() {
       </form>
 
       <section className="card">
-        <h2>Transferlerim</h2>
+        <div className="card-header">
+          <h2>Transferlerim</h2>
+          {transfers && transfers.length > 0 && (
+            <span className="limit-total">{transfers.length} transfer</span>
+          )}
+        </div>
         {error && <div className="result-banner error">{error}</div>}
         {!transfers ? (
           <div className="loading">Yükleniyor…</div>
         ) : transfers.length === 0 ? (
           <p className="empty-state">Bu kriterlere uyan transfer bulunamadı.</p>
         ) : (
-          <table>
-            <thead>
-              <tr><th>Tarih</th><th>Alıcı IBAN</th><th>Tutar</th><th>Durum</th><th></th></tr>
-            </thead>
-            <tbody>
-              {transfers.map((t) => (
-                <tr key={t.id}>
-                  <td>{new Date(t.createdAt).toLocaleString('tr-TR')}</td>
-                  <td>{t.destinationIban}</td>
-                  <td>{t.amount} {t.currency}</td>
-                  <td><StatusBadge status={t.status} /></td>
-                  <td><Link to={`/transfers/${t.id}`}>Detay</Link></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <table>
+              <thead>
+                <tr><th>Tarih</th><th>Alıcı IBAN</th><th>Tutar</th><th>Durum</th><th></th></tr>
+              </thead>
+              <tbody>
+                {pageItems.map((t) => (
+                  <tr key={t.id}>
+                    <td>{new Date(t.createdAt).toLocaleString('tr-TR')}</td>
+                    <td>{t.destinationIban}</td>
+                    <td>{t.amount} {t.currency}</td>
+                    <td><StatusBadge status={t.status} /></td>
+                    <td><Link to={`/transfers/${t.id}`}>Detay</Link></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {totalPages > 1 && (
+              <div className="pagination">
+                <button type="button" onClick={() => setPage((p) => p - 1)} disabled={page === 0}>
+                  &larr; Önceki
+                </button>
+                <span className="limit-total">Sayfa {page + 1} / {totalPages}</span>
+                <button type="button" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages - 1}>
+                  Sonraki &rarr;
+                </button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>
