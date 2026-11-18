@@ -22,6 +22,8 @@ Tarayıcıda `http://localhost:5173` açılır.
 
 **Önemli — self-signed sertifika:** Backend geliştirme ortamında self-signed bir TLS sertifikası kullanıyor. Tarayıcı, farklı bir origin'deki (API) bu sertifikaya güvenmediği için ilk kullanımda `https://localhost:8443` adresini tarayıcıda bir kez açıp sertifika uyarısını kabul etmeniz gerekir; aksi halde frontend'den API çağrıları "ağ hatası" olarak başarısız olur.
 
+**Backend'i `SSL_ENABLED=false` ile çalıştırdıysanız** (örn. Windows'ta `keytool`/bash olmadığı için `generate-keystore.sh` çalıştıramadıysanız — bkz. `../backend/README.md`), backend düz HTTP'ye düşer ve `https://localhost:8443` artık yanıt vermez. Bu durumda `frontend/.env` içindeki `VITE_API_BASE_URL` değerini de `http://localhost:8443/api` olarak değiştirmeniz gerekir — ikisi birbiriyle eşleşmeli, aksi halde istekler başarısız olur.
+
 ## Demo kullanıcılar
 
 `alice` / `Passw0rd!` ve `bob` / `Passw0rd!` (bkz. backend seed verisi).

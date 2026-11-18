@@ -70,6 +70,11 @@ Generate the local dev TLS keystore once (gitignored, not committed — see Secu
 ./scripts/generate-keystore.sh
 ```
 
+(Windows without Git Bash/WSL: the script needs `bash` and `keytool` on PATH. Either run it from Git Bash/WSL,
+or run the equivalent command directly with a JDK's `keytool` on PATH:
+`keytool -genkeypair -alias swiftpay -keyalg RSA -keysize 2048 -validity 3650 -storetype PKCS12 -keystore src/main/resources/keystore.p12 -storepass changeit -keypass changeit -dname "CN=localhost, OU=SwiftPay, O=SwiftPay, L=Istanbul, ST=Istanbul, C=TR"`.
+Or skip this step entirely and set `SSL_ENABLED=false` below — see the note under "Running it".)
+
 Start the app (Flyway migrates the schema and seeds demo data automatically):
 
 ```bash
@@ -78,7 +83,9 @@ mvn spring-boot:run
 
 API listens on **`https://localhost:8443`** (self-signed dev certificate — use `curl -k` or equivalent).
 Plain `http://localhost:8080` is kept open only to 302-redirect to HTTPS. Set `SSL_ENABLED=false` to serve
-plain HTTP on `8443` instead, e.g. for quick local debugging without the keystore.
+plain HTTP on `8443` instead, e.g. for quick local debugging without the keystore. **If you do this, also
+change `VITE_API_BASE_URL` in `frontend/.env` to `http://localhost:8443/api`** — the frontend and backend
+scheme must match, or requests fail (see `frontend/README.md`).
 
 Run the test suite (unit + integration, against `swiftpay_test`):
 
