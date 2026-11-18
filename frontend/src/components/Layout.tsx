@@ -10,7 +10,7 @@ export function Layout() {
         <nav>
           <NavLink to="/" end>Hesaplarım</NavLink>
           <NavLink to="/transfers/new">Yeni Transfer</NavLink>
-          <NavLink to="/transfers">Transferlerim</NavLink>
+          <NavLink to="/transfers" end>Transferlerim</NavLink>
           <NavLink to="/statistics">İstatistikler</NavLink>
         </nav>
         <button className="link-button" onClick={logout}>Çıkış yap</button>
